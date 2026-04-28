@@ -7,6 +7,7 @@ import (
 	"reviewsrv/pkg/db"
 	"reviewsrv/pkg/rpc"
 	"reviewsrv/pkg/vt"
+	"reviewsrv/pkg/worker"
 
 	"github.com/go-pg/pg/v10"
 	monitor "github.com/hypnoglow/go-pg-monitor"
@@ -53,6 +54,7 @@ type App struct {
 	dbc     *pg.DB
 	mon     *monitor.Monitor
 	echo    *echo.Echo
+	queue   *worker.Queue
 	vtsrv   *zenrpc.Server
 	srv     *zenrpc.Server
 }
@@ -66,10 +68,11 @@ func New(appName, version string, sl embedlog.Logger, cfg Config, db db.DB, dbc 
 		dbc:     dbc,
 		echo:    appkit.NewEcho(),
 		Logger:  sl,
+		queue:   worker.NewQueue(db),
 	}
 
 	// add services
-	a.vtsrv = vt.New(a.db, a.Logger, a.cfg.Server.IsDevel, a.cfg.Server.BaseURL)
+	a.vtsrv = vt.New(a.db, a.queue, a.Logger, a.cfg.Server.IsDevel, a.cfg.Server.BaseURL)
 	a.srv = rpc.New(a.db, a.Logger, a.cfg.Server.IsDevel, a.version)
 
 	return a

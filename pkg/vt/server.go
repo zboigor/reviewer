@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"reviewsrv/pkg/db"
+	"reviewsrv/pkg/worker"
 
 	"github.com/vmkteam/embedlog"
 	zm "github.com/vmkteam/zenrpc-middleware"
@@ -23,6 +24,7 @@ const (
 	NSPrompt       = "prompt"
 	NSSlackChannel = "slackChannel"
 	NSTaskTracker  = "taskTracker"
+	NSReview       = "review"
 )
 
 var (
@@ -44,7 +46,7 @@ func httpAsRPCError(code int) *zenrpc.Error {
 }
 
 // New returns new zenrpc Server.
-func New(dbo db.DB, logger embedlog.Logger, isDevel bool, baseURL string) *zenrpc.Server {
+func New(dbo db.DB, queue *worker.Queue, logger embedlog.Logger, isDevel bool, baseURL string) *zenrpc.Server {
 	rpc := zenrpc.NewServer(zenrpc.Options{
 		ExposeSMD: true,
 		AllowCORS: true,
@@ -74,6 +76,7 @@ func New(dbo db.DB, logger embedlog.Logger, isDevel bool, baseURL string) *zenrp
 		NSPrompt:       NewPromptService(dbo, logger),
 		NSSlackChannel: NewSlackChannelService(dbo, logger),
 		NSTaskTracker:  NewTaskTrackerService(dbo, logger),
+		NSReview:       NewReviewService(dbo, queue, logger),
 	})
 
 	return rpc

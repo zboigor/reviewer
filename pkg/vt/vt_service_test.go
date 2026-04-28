@@ -13,6 +13,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestParsePRURL(t *testing.T) {
+	cases := []struct {
+		in    string
+		owner string
+		repo  string
+		pr    int
+		ok    bool
+	}{
+		{"https://github.com/octo/repo/pull/123", "octo", "repo", 123, true},
+		{"https://github.com/octo/repo/pull/123/files", "octo", "repo", 123, true},
+		{"https://github.com/octo/repo/pull/123extra", "octo", "repo", 123, true},
+		{"https://github.com/octo/repo", "", "", 0, false},
+		{"", "", "", 0, false},
+	}
+	for _, c := range cases {
+		o, r, n, err := parsePRURL(c.in)
+		if (err == nil) != c.ok || o != c.owner || r != c.repo || n != c.pr {
+			t.Errorf("parsePRURL(%q) = %s/%s#%d, %v", c.in, o, r, n, err)
+		}
+	}
+}
+
 func TestDB_AuthService(t *testing.T) {
 	ctx := t.Context()
 	srv := NewAuthService(test.Setup(t))

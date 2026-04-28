@@ -463,17 +463,21 @@ func (rs *ReviewSearch) Q() applier {
 type ProjectSearch struct {
 	search
 
-	ID              *int
-	Title           *string
-	VcsURL          *string
-	Language        *string
-	ProjectKey      *string
-	PromptID        *int
-	TaskTrackerID   *int
-	SlackChannelID  *int
-	CreatedAt       *time.Time
-	StatusID        *int
-	Instructions    *string
+	ID             *int
+	Title          *string
+	VcsURL         *string
+	Language       *string
+	ProjectKey     *string
+	PromptID       *int
+	TaskTrackerID  *int
+	SlackChannelID *int
+	CreatedAt      *time.Time
+	StatusID       *int
+	Instructions   *string
+	// NOTE: GithubOwner and GithubRepo added manually for ProjectByGithubRepo
+	// (see pkg/db/project_ext.go). Preserve these on mfd-generator regeneration.
+	GithubOwner     *string
+	GithubRepo      *string
 	IDs             []int
 	TitleILike      *string
 	VcsURLILike     *string
@@ -517,6 +521,13 @@ func (ps *ProjectSearch) Apply(query *orm.Query) *orm.Query {
 	}
 	if ps.Instructions != nil {
 		ps.where(query, Tables.Project.Alias, Columns.Project.Instructions, ps.Instructions)
+	}
+	// NOTE: hand-added for ProjectByGithubRepo — preserve on regeneration.
+	if ps.GithubOwner != nil {
+		ps.where(query, Tables.Project.Alias, Columns.Project.GithubOwner, ps.GithubOwner)
+	}
+	if ps.GithubRepo != nil {
+		ps.where(query, Tables.Project.Alias, Columns.Project.GithubRepo, ps.GithubRepo)
 	}
 	if len(ps.IDs) > 0 {
 		Filter{Columns.Project.ID, ps.IDs, SearchTypeArray, false}.Apply(query)
