@@ -3,7 +3,6 @@
     <div class="flex items-center justify-between mb-6 gap-4">
       <h1 class="text-xl sm:text-2xl font-bold text-fg">Projects</h1>
       <div class="flex items-center gap-2">
-        <VButton variant="secondary" @click="openCI">CI</VButton>
         <VButton variant="secondary" to="/projects/bulk-add">Bulk Add</VButton>
         <VButton size="sm" to="/projects/new">Add Project</VButton>
       </div>
@@ -70,45 +69,6 @@
 
     <Pagination :page="viewOps.page" :page-size="viewOps.pageSize" :total="total" @update:page="setPage" />
 
-    <!-- CI Setup Modal (general) -->
-    <Teleport to="body">
-      <div v-if="ciVisible" class="fixed inset-0 z-50 flex items-center justify-center" @keydown.esc="ciVisible = false" tabindex="-1" ref="ciDialogRef">
-        <div class="fixed inset-0 bg-overlay" @click="ciVisible = false"></div>
-        <div class="relative bg-surface rounded-xl shadow-xl max-w-2xl w-full mx-4 p-4 sm:p-6 h-[85vh] sm:h-[90vh] flex flex-col">
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-semibold text-fg">CI Setup</h3>
-            <button @click="ciVisible = false" class="text-fg-subtle hover:text-fg-secondary text-xl leading-none">&times;</button>
-          </div>
-
-          <!-- Tabs -->
-          <div class="flex border-b border-edge mb-4">
-            <button
-              v-for="(file, idx) in ciFiles"
-              :key="idx"
-              @click="ciTab = idx"
-              class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors"
-              :class="ciTab === idx ? 'border-accent text-accent' : 'border-transparent text-fg-muted hover:text-fg-secondary'"
-            >{{ file.name }}</button>
-          </div>
-
-          <!-- Tab content — use v-show to keep all panels in DOM so height stays stable -->
-          <div class="flex-1 overflow-hidden relative">
-            <div
-              v-for="(file, idx) in ciFiles"
-              :key="idx"
-              v-show="ciTab === idx"
-              class="flex flex-col gap-3 h-full"
-            >
-              <div class="overflow-auto rounded-lg border border-edge bg-surface-alt flex-1">
-                <pre class="p-3 text-xs leading-relaxed whitespace-pre overflow-x-auto"><code>{{ file.content }}</code></pre>
-              </div>
-              <VButton variant="secondary" size="sm" class="self-end shrink-0" @click="copyToClipboard(file.content, idx)">{{ ciCopied === idx ? 'Copied!' : 'Copy' }}</VButton>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Teleport>
-
     <!-- Local Run Modal (per-project) -->
     <Teleport to="body">
       <div v-if="localRunVisible" class="fixed inset-0 z-50 flex items-center justify-center" @keydown.esc="localRunVisible = false" tabindex="-1" ref="localRunDialogRef">
@@ -135,7 +95,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import vtApi, { type ProjectSummary, type ICIFile } from '../../../api/vt'
+import vtApi, { type ProjectSummary } from '../../../api/vt'
 import { useCrud } from '../../composables/useCrud'
 import DataTable from '../../components/DataTable.vue'
 import Pagination from '../../components/Pagination.vue'
@@ -169,52 +129,12 @@ function copyKey(key: string) {
 }
 
 // Modal refs
-const ciDialogRef = ref<HTMLElement>()
 const localRunDialogRef = ref<HTMLElement>()
-
-// CI modal state (general)
-const ciVisible = ref(false)
-const ciTab = ref(0)
-const ciFiles = ref<ICIFile[]>([])
-const ciCopied = ref<number | null>(null)
 
 // Local Run modal state (per-project)
 const localRunVisible = ref(false)
 const localRunProject = ref<ProjectSummary | null>(null)
 const localRunCopied = ref(false)
-
-const dockerfileContent = `FROM vmkteam/reviewer:latest AS source
-
-FROM node:20-alpine
-RUN apk add --no-cache git bash curl
-RUN npm install -g @anthropic-ai/claude-code
-
-# Copy reviewctl from reviewer image
-COPY --from=source /reviewctl /usr/local/bin/reviewctl
-
-# Claude Code default settings
-RUN mkdir -p /root/.claude && cat > /root/.claude/settings.json <<'EOF'
-{
-  "permissions": {
-    "deny": [
-      "Read(**/.env)",
-      "Bash(sudo:*)",
-      "Bash(su:*)",
-      "Bash(ssh:*)"
-    ]
-  },
-  "language": "Russian",
-  "autoUpdatesChannel": "latest",
-  "gitAttribution": false,
-  "env": {
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": 1,
-    "DISABLE_TELEMETRY": 1,
-    "DISABLE_ERROR_REPORTING": 1
-  }
-}
-EOF
-
-WORKDIR /workspace`
 
 const localRunScript = computed(() => {
   const baseURL = window.location.origin
@@ -226,30 +146,14 @@ export REVIEWSRV_URL="${baseURL}"
 reviewctl review
 
 # Or step-by-step:
-# reviewctl upload    # upload local review.json + R*.md
-# reviewctl comment   # post MR comments only`
+# reviewctl upload    # upload local review.json + R*.md`
 })
-
-async function openCI() {
-  ciTab.value = 0
-  ciCopied.value = null
-  const files = await vtApi.project.gitlabCI()
-  ciFiles.value = [...files, { name: 'Dockerfile', content: dockerfileContent }]
-  ciVisible.value = true
-  nextTick(() => ciDialogRef.value?.focus())
-}
 
 function openLocalRun(project: ProjectSummary) {
   localRunProject.value = project
   localRunCopied.value = false
   localRunVisible.value = true
   nextTick(() => localRunDialogRef.value?.focus())
-}
-
-function copyToClipboard(text: string, tab: number = 0) {
-  navigator.clipboard.writeText(text)
-  ciCopied.value = tab
-  setTimeout(() => { ciCopied.value = null }, 2000)
 }
 
 function copyLocalRun() {

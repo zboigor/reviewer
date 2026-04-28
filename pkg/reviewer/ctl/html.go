@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"reviewsrv/pkg/reviewer"
 
@@ -128,4 +129,11 @@ func GenerateHTML(dir string, title string, mdFiles map[string]string) error {
 	}
 
 	return nil
+}
+
+func capitalizeFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }

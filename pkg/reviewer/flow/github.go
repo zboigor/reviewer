@@ -51,8 +51,7 @@ func firstLine(s string) int {
 	return n
 }
 
-// formatIssue renders the per-issue comment body. Matches the GitLab equivalent
-// in pkg/reviewer/ctl/gitlab.go so both platforms see the same content.
+// formatIssue renders the per-issue comment body.
 func formatIssue(iss Issue) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "🔴 **%s. %s** (%s)\n\n", iss.LocalID, iss.Title, iss.IssueType)

@@ -3,6 +3,7 @@
 .worktrees/
 docs/superpowers/
 cfg/local.toml
+.testenv
 coverage.txt
 coverage.xml
 Makefile.mk

@@ -1,7 +1,5 @@
 // Package flow provides orchestration for the review pipeline used by the
-// GitHub PR worker. It is a sibling of pkg/reviewer/ctl and does not replace it;
-// ctl handles the GitLab path. Task 13 will collapse the duplication once
-// the GitLab integration is deleted.
+// GitHub PR worker.
 package flow
 
 import (
@@ -44,7 +42,7 @@ type Issue struct {
 	SuggestedFix string
 }
 
-// Commenter posts review comments to a code hosting platform (GitHub, GitLab, …).
+// Commenter posts review comments to a code hosting platform.
 type Commenter interface {
 	PostSummary(ctx context.Context, body string) error
 	PostInline(ctx context.Context, iss Issue) error

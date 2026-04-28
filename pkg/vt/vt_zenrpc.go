@@ -11,7 +11,7 @@ import (
 )
 
 var RPC = struct {
-	ProjectService      struct{ Count, Get, GetByID, Add, Update, Delete, GitlabCI, Validate string }
+	ProjectService      struct{ Count, Get, GetByID, Add, Update, Delete, Validate string }
 	PromptService       struct{ Count, Get, GetByID, Add, Update, Delete, Validate string }
 	SlackChannelService struct{ Count, Get, GetByID, Add, Update, Delete, Validate string }
 	TaskTrackerService  struct{ Count, Get, GetByID, Add, Update, Delete, Validate string }
@@ -19,14 +19,13 @@ var RPC = struct {
 	AuthService         struct{ Login, Logout, Profile, ChangePassword, VfsAuthToken string }
 	UserService         struct{ Count, Get, GetByID, Add, Update, Delete, Validate string }
 }{
-	ProjectService: struct{ Count, Get, GetByID, Add, Update, Delete, GitlabCI, Validate string }{
+	ProjectService: struct{ Count, Get, GetByID, Add, Update, Delete, Validate string }{
 		Count:    "count",
 		Get:      "get",
 		GetByID:  "getbyid",
 		Add:      "add",
 		Update:   "update",
 		Delete:   "delete",
-		GitlabCI: "gitlabci",
 		Validate: "validate",
 	},
 	PromptService: struct{ Count, Get, GetByID, Add, Update, Delete, Validate string }{
@@ -1283,36 +1282,6 @@ func (ProjectService) SMD() smd.ServiceInfo {
 					404: "Not Found",
 				},
 			},
-			"GitlabCI": {
-				Description: `GitlabCI returns CI configuration files for GitLab CI integration.`,
-				Parameters:  []smd.JSONSchema{},
-				Returns: smd.JSONSchema{
-					Description: `[]CIFile`,
-					Type:        smd.Array,
-					TypeName:    "[]CIFile",
-					Items: map[string]string{
-						"$ref": "#/definitions/CIFile",
-					},
-					Definitions: map[string]smd.Definition{
-						"CIFile": {
-							Type: "object",
-							Properties: smd.PropertyList{
-								{
-									Name: "name",
-									Type: smd.String,
-								},
-								{
-									Name: "content",
-									Type: smd.String,
-								},
-							},
-						},
-					},
-				},
-				Errors: map[int]string{
-					500: "Internal Error",
-				},
-			},
 			"Validate": {
 				Description: `Validate verifies that Project data is valid.`,
 				Parameters: []smd.JSONSchema{
@@ -1686,9 +1655,6 @@ func (s ProjectService) Invoke(ctx context.Context, method string, params json.R
 		}
 
 		resp.Set(s.Delete(ctx, args.Id))
-
-	case RPC.ProjectService.GitlabCI:
-		resp.Set(s.GitlabCI(ctx))
 
 	case RPC.ProjectService.Validate:
 		var args = struct {

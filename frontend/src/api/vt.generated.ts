@@ -11,11 +11,6 @@ export interface IAuthLoginParams {
   remember: boolean
 }
 
-export interface ICIFile {
-  name: string,
-  content: string
-}
-
 export interface IFieldError {
   field: string,
   error: string,
@@ -375,13 +370,6 @@ export class AuthLoginParams implements IAuthLoginParams {
   login: string = null;
   password: string = null;
   remember: boolean = false;
-}
-
-export class CIFile implements ICIFile {
-  static entityName = "cifile";
-
-  name: string = null;
-  content: string = null;
 }
 
 export class FieldError implements IFieldError {
@@ -906,12 +894,6 @@ export const factory = (send: any) => ({
      */
     getByID(params: IProjectGetByIDParams): Promise<IProject> {
       return send('project.GetByID', params)
-    },
-    /**
-     * GitlabCI returns CI configuration files for GitLab CI integration.
-     */
-    gitlabCI(): Promise<Array<ICIFile>> {
-      return send('project.GitlabCI')
     },
     /**
      * Update updates the Project data identified by id from the query.

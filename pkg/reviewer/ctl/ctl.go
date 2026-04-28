@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"reviewsrv/pkg/rest"
@@ -16,25 +15,18 @@ type Controller struct {
 	log    *slog.Logger
 	prompt *PromptClient
 	upload *UploadClient
-	gitlab *GitLabClient
 	runner ClaudeRunner
 }
 
 // NewController creates a new Controller from Config.
 func NewController(cfg *Config, runner ClaudeRunner, log *slog.Logger) *Controller {
-	c := &Controller{
+	return &Controller{
 		cfg:    cfg,
 		log:    log,
 		prompt: NewPromptClient(log),
 		upload: NewUploadClient(log),
 		runner: runner,
 	}
-
-	if cfg.HasGitLab() {
-		c.gitlab = NewGitLabClient(cfg, log)
-	}
-
-	return c
 }
 
 // Review runs the full review flow: fetch prompt → Claude → parse → upload → comment → HTML.
@@ -79,7 +71,6 @@ func (c *Controller) Review(ctx context.Context) error {
 		return fmt.Errorf("upload: %w", err)
 	}
 
-	c.postComments(ctx, draft, reviewID)
 	c.generateHTML(draft, mdFiles)
 
 	c.log.InfoContext(ctx, "review completed", "reviewId", reviewID, "duration", time.Since(start).Round(time.Second))
@@ -107,28 +98,9 @@ func (c *Controller) Upload(ctx context.Context) error {
 		return fmt.Errorf("upload: %w", err)
 	}
 
-	c.postComments(ctx, draft, reviewID)
 	c.generateHTML(draft, mdFiles)
 
 	c.log.InfoContext(ctx, "upload completed", "reviewId", reviewID)
-	return nil
-}
-
-// Comment posts MR comments for an existing review.
-func (c *Controller) Comment(ctx context.Context) error {
-	if c.gitlab == nil {
-		c.log.WarnContext(ctx, "gitlab not configured, skipping comment")
-		return nil
-	}
-
-	draft, err := ReadReviewJSON(c.cfg.Dir)
-	if err != nil {
-		return fmt.Errorf("read review: %w", err)
-	}
-
-	c.gitlab.PostAllComments(ctx, draft, c.reviewURL(c.cfg.ReviewID))
-
-	c.log.InfoContext(ctx, "comment completed", "reviewId", c.cfg.ReviewID)
 	return nil
 }
 
@@ -151,19 +123,6 @@ func (c *Controller) fillMetadata(draft *rest.ReviewDraft) {
 	if draft.Review.CommitHash == "" && c.cfg.Commit != "" {
 		draft.Review.CommitHash = c.cfg.Commit
 	}
-}
-
-func (c *Controller) postComments(ctx context.Context, draft *rest.ReviewDraft, reviewID int) {
-	if c.gitlab == nil {
-		c.log.InfoContext(ctx, "gitlab not configured, skipping comments")
-		return
-	}
-	c.log.InfoContext(ctx, "posting gitlab comments", "reviewId", reviewID)
-	c.gitlab.PostAllComments(ctx, draft, c.reviewURL(reviewID))
-}
-
-func (c *Controller) reviewURL(reviewID int) string {
-	return fmt.Sprintf("%s/reviews/%d/", strings.TrimRight(c.cfg.PublicBaseURL(), "/"), reviewID)
 }
 
 func (c *Controller) generateHTML(draft *rest.ReviewDraft, mdFiles map[string]string) {

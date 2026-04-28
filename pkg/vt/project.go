@@ -2,24 +2,12 @@ package vt
 
 import (
 	"context"
-	_ "embed"
 
 	"reviewsrv/pkg/db"
 
 	"github.com/vmkteam/embedlog"
 	"github.com/vmkteam/zenrpc/v2"
 )
-
-//go:embed gitlab-ci.yml.tmpl
-var gitlabCITmpl string
-
-//go:embed gitlab-review.yml.tmpl
-var gitlabReviewTmpl string
-
-type CIFile struct {
-	Name    string `json:"name"`
-	Content string `json:"content"`
-}
 
 type ProjectService struct {
 	zenrpc.Service
@@ -166,17 +154,6 @@ func (s ProjectService) Delete(ctx context.Context, id int) (bool, error) {
 		return false, InternalError(err)
 	}
 	return ok, err
-}
-
-// GitlabCI returns CI configuration files for GitLab CI integration.
-//
-//zenrpc:return []CIFile
-//zenrpc:500 Internal Error
-func (s ProjectService) GitlabCI(_ context.Context) ([]CIFile, error) {
-	return []CIFile{
-		{Name: "templates/review.yml", Content: gitlabReviewTmpl},
-		{Name: ".gitlab-ci.yml", Content: gitlabCITmpl},
-	}, nil
 }
 
 // Validate verifies that Project data is valid.
