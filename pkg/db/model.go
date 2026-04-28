@@ -23,12 +23,12 @@ var Columns = struct {
 		Review string
 	}
 	Review struct {
-		ID, ProjectID, Title, Description, ExternalID, TrafficLight, CommitHash, SourceBranch, TargetBranch, Author, CreatedAt, DurationMS, ModelInfo, StatusID, PromptID, EffortMinutes, AiSlopScore string
+		ID, ProjectID, Title, Description, ExternalID, TrafficLight, CommitHash, SourceBranch, TargetBranch, Author, CreatedAt, DurationMS, ModelInfo, StatusID, PromptID, EffortMinutes, AiSlopScore, TriggeredByUserID, PRNumber string
 
-		Project, Prompt string
+		Project, Prompt, TriggeredByUser string
 	}
 	Project struct {
-		ID, Title, VcsURL, Language, ProjectKey, PromptID, TaskTrackerID, SlackChannelID, CreatedAt, StatusID, Instructions string
+		ID, Title, VcsURL, Language, ProjectKey, PromptID, TaskTrackerID, SlackChannelID, CreatedAt, StatusID, Instructions, GithubOwner, GithubRepo, InstallationID string
 
 		Prompt, TaskTracker, SlackChannel string
 	}
@@ -40,6 +40,11 @@ var Columns = struct {
 	}
 	TaskTracker struct {
 		ID, Title, AuthToken, FetchPrompt, CreatedAt, StatusID, URL string
+	}
+	ReviewJob struct {
+		ID, ReviewID, Status, Attempts, LockedAt, LockedBy, LastError, CreatedAt, UpdatedAt string
+
+		Review string
 	}
 }{
 	User: struct {
@@ -99,33 +104,36 @@ var Columns = struct {
 		Review: "Review",
 	},
 	Review: struct {
-		ID, ProjectID, Title, Description, ExternalID, TrafficLight, CommitHash, SourceBranch, TargetBranch, Author, CreatedAt, DurationMS, ModelInfo, StatusID, PromptID, EffortMinutes, AiSlopScore string
+		ID, ProjectID, Title, Description, ExternalID, TrafficLight, CommitHash, SourceBranch, TargetBranch, Author, CreatedAt, DurationMS, ModelInfo, StatusID, PromptID, EffortMinutes, AiSlopScore, TriggeredByUserID, PRNumber string
 
-		Project, Prompt string
+		Project, Prompt, TriggeredByUser string
 	}{
-		ID:            "reviewId",
-		ProjectID:     "projectId",
-		Title:         "title",
-		Description:   "description",
-		ExternalID:    "externalId",
-		TrafficLight:  "trafficLight",
-		CommitHash:    "commitHash",
-		SourceBranch:  "sourceBranch",
-		TargetBranch:  "targetBranch",
-		Author:        "author",
-		CreatedAt:     "createdAt",
-		DurationMS:    "durationMS",
-		ModelInfo:     "modelInfo",
-		StatusID:      "statusId",
-		PromptID:      "promptId",
-		EffortMinutes: "effortMinutes",
-		AiSlopScore:   "aiSlopScore",
+		ID:                "reviewId",
+		ProjectID:         "projectId",
+		Title:             "title",
+		Description:       "description",
+		ExternalID:        "externalId",
+		TrafficLight:      "trafficLight",
+		CommitHash:        "commitHash",
+		SourceBranch:      "sourceBranch",
+		TargetBranch:      "targetBranch",
+		Author:            "author",
+		CreatedAt:         "createdAt",
+		DurationMS:        "durationMS",
+		ModelInfo:         "modelInfo",
+		StatusID:          "statusId",
+		PromptID:          "promptId",
+		EffortMinutes:     "effortMinutes",
+		AiSlopScore:       "aiSlopScore",
+		TriggeredByUserID: "triggeredByUserId",
+		PRNumber:          "prNumber",
 
-		Project: "Project",
-		Prompt:  "Prompt",
+		Project:         "Project",
+		Prompt:          "Prompt",
+		TriggeredByUser: "TriggeredByUser",
 	},
 	Project: struct {
-		ID, Title, VcsURL, Language, ProjectKey, PromptID, TaskTrackerID, SlackChannelID, CreatedAt, StatusID, Instructions string
+		ID, Title, VcsURL, Language, ProjectKey, PromptID, TaskTrackerID, SlackChannelID, CreatedAt, StatusID, Instructions, GithubOwner, GithubRepo, InstallationID string
 
 		Prompt, TaskTracker, SlackChannel string
 	}{
@@ -140,6 +148,9 @@ var Columns = struct {
 		CreatedAt:      "createdAt",
 		StatusID:       "statusId",
 		Instructions:   "instructions",
+		GithubOwner:    "githubOwner",
+		GithubRepo:     "githubRepo",
+		InstallationID: "installationId",
 
 		Prompt:       "Prompt",
 		TaskTracker:  "TaskTracker",
@@ -179,6 +190,23 @@ var Columns = struct {
 		StatusID:    "statusId",
 		URL:         "url",
 	},
+	ReviewJob: struct {
+		ID, ReviewID, Status, Attempts, LockedAt, LockedBy, LastError, CreatedAt, UpdatedAt string
+
+		Review string
+	}{
+		ID:        "reviewJobId",
+		ReviewID:  "reviewId",
+		Status:    "status",
+		Attempts:  "attempts",
+		LockedAt:  "lockedAt",
+		LockedBy:  "lockedBy",
+		LastError: "lastError",
+		CreatedAt: "createdAt",
+		UpdatedAt: "updatedAt",
+
+		Review: "Review",
+	},
 }
 
 var Tables = struct {
@@ -204,6 +232,9 @@ var Tables = struct {
 		Name, Alias string
 	}
 	TaskTracker struct {
+		Name, Alias string
+	}
+	ReviewJob struct {
 		Name, Alias string
 	}
 }{
@@ -253,6 +284,12 @@ var Tables = struct {
 		Name, Alias string
 	}{
 		Name:  "taskTrackers",
+		Alias: "t",
+	},
+	ReviewJob: struct {
+		Name, Alias string
+	}{
+		Name:  "reviewJobs",
 		Alias: "t",
 	},
 }
@@ -315,26 +352,29 @@ type ReviewFile struct {
 type Review struct {
 	tableName struct{} `pg:"reviews,alias:t,discard_unknown_columns"`
 
-	ID            int             `pg:"reviewId,pk"`
-	ProjectID     int             `pg:"projectId,use_zero"`
-	Title         string          `pg:"title,use_zero"`
-	Description   string          `pg:"description,use_zero"`
-	ExternalID    string          `pg:"externalId,use_zero"`
-	TrafficLight  string          `pg:"trafficLight,use_zero"`
-	CommitHash    string          `pg:"commitHash,use_zero"`
-	SourceBranch  string          `pg:"sourceBranch,use_zero"`
-	TargetBranch  string          `pg:"targetBranch,use_zero"`
-	Author        string          `pg:"author,use_zero"`
-	CreatedAt     time.Time       `pg:"createdAt,use_zero"`
-	DurationMS    int             `pg:"durationMS,use_zero"`
-	ModelInfo     ReviewModelInfo `pg:"modelInfo,use_zero"`
-	StatusID      int             `pg:"statusId,use_zero"`
-	PromptID      int             `pg:"promptId,use_zero"`
-	EffortMinutes *int            `pg:"effortMinutes"`
-	AiSlopScore   *float32        `pg:"aiSlopScore"`
+	ID                int             `pg:"reviewId,pk"`
+	ProjectID         int             `pg:"projectId,use_zero"`
+	Title             string          `pg:"title,use_zero"`
+	Description       string          `pg:"description,use_zero"`
+	ExternalID        string          `pg:"externalId,use_zero"`
+	TrafficLight      string          `pg:"trafficLight,use_zero"`
+	CommitHash        string          `pg:"commitHash,use_zero"`
+	SourceBranch      string          `pg:"sourceBranch,use_zero"`
+	TargetBranch      string          `pg:"targetBranch,use_zero"`
+	Author            string          `pg:"author,use_zero"`
+	CreatedAt         time.Time       `pg:"createdAt,use_zero"`
+	DurationMS        int             `pg:"durationMS,use_zero"`
+	ModelInfo         ReviewModelInfo `pg:"modelInfo,use_zero"`
+	StatusID          int             `pg:"statusId,use_zero"`
+	PromptID          int             `pg:"promptId,use_zero"`
+	EffortMinutes     *int            `pg:"effortMinutes"`
+	AiSlopScore       *float32        `pg:"aiSlopScore"`
+	TriggeredByUserID *int            `pg:"triggeredByUserId"`
+	PRNumber          *int            `pg:"prNumber"`
 
-	Project *Project `pg:"fk:projectId,rel:has-one"`
-	Prompt  *Prompt  `pg:"fk:promptId,rel:has-one"`
+	Project         *Project `pg:"fk:projectId,rel:has-one"`
+	Prompt          *Prompt  `pg:"fk:promptId,rel:has-one"`
+	TriggeredByUser *User    `pg:"fk:triggeredByUserId,rel:has-one"`
 }
 
 type Project struct {
@@ -351,6 +391,9 @@ type Project struct {
 	CreatedAt      time.Time `pg:"createdAt,use_zero"`
 	StatusID       int       `pg:"statusId,use_zero"`
 	Instructions   *string   `pg:"instructions"`
+	GithubOwner    *string   `pg:"githubOwner"`
+	GithubRepo     *string   `pg:"githubRepo"`
+	InstallationID *int64    `pg:"installationId"`
 
 	Prompt       *Prompt       `pg:"fk:promptId,rel:has-one"`
 	TaskTracker  *TaskTracker  `pg:"fk:taskTrackerId,rel:has-one"`
@@ -392,4 +435,20 @@ type TaskTracker struct {
 	CreatedAt   time.Time `pg:"createdAt,use_zero"`
 	StatusID    int       `pg:"statusId,use_zero"`
 	URL         string    `pg:"url,use_zero"`
+}
+
+type ReviewJob struct {
+	tableName struct{} `pg:"reviewJobs,alias:t,discard_unknown_columns"`
+
+	ID        int        `pg:"reviewJobId,pk"`
+	ReviewID  int        `pg:"reviewId,use_zero"`
+	Status    string     `pg:"status,use_zero"`
+	Attempts  int        `pg:"attempts,use_zero"`
+	LockedAt  *time.Time `pg:"lockedAt"`
+	LockedBy  *string    `pg:"lockedBy"`
+	LastError *string    `pg:"lastError"`
+	CreatedAt time.Time  `pg:"createdAt,use_zero"`
+	UpdatedAt time.Time  `pg:"updatedAt,use_zero"`
+
+	Review *Review `pg:"fk:reviewId,rel:has-one"`
 }
