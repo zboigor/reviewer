@@ -36,6 +36,9 @@ type Config struct {
 		PrivateKeyPath string
 		APIBaseURL     string
 	}
+	Repos struct {
+		BaseDir string
+	}
 }
 
 type App struct {
