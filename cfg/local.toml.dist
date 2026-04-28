@@ -25,4 +25,7 @@ APIBaseURL       = "https://api.github.com"
 BaseDir = "/var/lib/reviewer/repos"
 
 [Worker]
-DefaultModel = "opus"
+DefaultModel    = "opus"
+Enabled         = false  # set to true after configuring [GitHub] AppID + PrivateKeyPath
+Concurrency     = 1
+PollIntervalMs  = 5000

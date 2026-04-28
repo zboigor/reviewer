@@ -2,9 +2,13 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"reviewsrv/pkg/db"
+	"reviewsrv/pkg/githubapp"
+	"reviewsrv/pkg/repos"
+	"reviewsrv/pkg/reviewer"
 	"reviewsrv/pkg/rpc"
 	"reviewsrv/pkg/vt"
 	"reviewsrv/pkg/worker"
@@ -41,7 +45,10 @@ type Config struct {
 		BaseDir string
 	}
 	Worker struct {
-		DefaultModel string // Claude model name; falls back to "opus" when empty
+		DefaultModel   string // Claude model name; falls back to "opus" when empty
+		Enabled        bool
+		Concurrency    int
+		PollIntervalMs int
 	}
 }
 
@@ -80,6 +87,12 @@ func New(appName, version string, sl embedlog.Logger, cfg Config, db db.DB, dbc 
 
 // Run is a function that runs application.
 func (a *App) Run(ctx context.Context) error {
+	if a.cfg.Worker.Enabled {
+		if err := a.startWorkers(ctx); err != nil {
+			return fmt.Errorf("start workers: %w", err)
+		}
+	}
+
 	a.registerMetrics()
 	a.registerHandlers()
 	a.registerDebugHandlers()
@@ -94,6 +107,86 @@ func (a *App) Run(ctx context.Context) error {
 	a.registerMetadata()
 
 	return a.runHTTPServer(ctx, a.cfg.Server.Host, a.cfg.Server.Port)
+}
+
+// startWorkers initialises the GitHub App client, repo cache, and project manager,
+// then launches cfg.Worker.Concurrency worker goroutines that poll the queue.
+// Each goroutine runs until ctx is cancelled.
+func (a *App) startWorkers(ctx context.Context) error {
+	ghApp, err := githubapp.NewApp(githubapp.Config{
+		AppID:          a.cfg.GitHub.AppID,
+		PrivateKeyPath: a.cfg.GitHub.PrivateKeyPath,
+		APIBaseURL:     a.cfg.GitHub.APIBaseURL,
+	})
+	if err != nil {
+		return fmt.Errorf("github app: %w", err)
+	}
+
+	cache := &repos.Cache{
+		BaseDir: a.cfg.Repos.BaseDir,
+		Token: func(c context.Context, id int64) (string, error) {
+			return ghApp.InstallationToken(c, id)
+		},
+	}
+
+	pm := reviewer.NewProjectManager(a.db)
+	workerDB := workerDBAdapter{repo: db.NewReviewRepo(a.db).WithEnabledAndIssueFilters()}
+
+	concurrency := a.cfg.Worker.Concurrency
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+	pollInterval := time.Duration(a.cfg.Worker.PollIntervalMs) * time.Millisecond
+	if pollInterval <= 0 {
+		pollInterval = 5 * time.Second
+	}
+
+	// a.Logger.Log() returns the underlying *slog.Logger from the embedlog.Logger
+	// embedded in App. This gives workers the same structured logger as the rest
+	// of the application.
+	log := a.Logger.Log()
+
+	for i := 0; i < concurrency; i++ {
+		w := &worker.Worker{
+			ID:            fmt.Sprintf("worker-%d", i),
+			Q:             a.queue,
+			DB:            workerDB,
+			App:           ghApp,
+			Cache:         cache,
+			Log:           log,
+			PollInterval:  pollInterval,
+			DefaultModel:  a.cfg.Worker.DefaultModel,
+			GitHubAPI:     a.cfg.GitHub.APIBaseURL,
+			PromptBuilder: pm,
+		}
+		go func() {
+			// Log only if the worker stopped for a reason other than its context
+			// being done (covers both Canceled and DeadlineExceeded).
+			if err := w.Run(ctx); err != nil && ctx.Err() == nil {
+				a.Logger.Errorf("worker %s stopped: %v", w.ID, err)
+			}
+		}()
+	}
+	return nil
+}
+
+// workerDBAdapter satisfies worker.DB by joining the review with its project.
+// ReviewRepo.ReviewByID returns (*db.Review, error); we need (*db.Review, *db.Project, error).
+// Passing FullReview() as an op causes go-pg to populate review.Project via a JOIN.
+type workerDBAdapter struct{ repo db.ReviewRepo }
+
+func (a workerDBAdapter) ReviewByID(ctx context.Context, id int) (*db.Review, *db.Project, error) {
+	review, err := a.repo.ReviewByID(ctx, id, a.repo.FullReview())
+	if err != nil {
+		return nil, nil, err
+	}
+	if review == nil {
+		return nil, nil, fmt.Errorf("review %d not found", id)
+	}
+	if review.Project == nil {
+		return nil, nil, fmt.Errorf("review %d has no project", id)
+	}
+	return review, review.Project, nil
 }
 
 // TypeScriptClient returns TypeScript client for VT or RPC.
