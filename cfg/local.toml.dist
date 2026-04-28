@@ -15,3 +15,8 @@ ApplicationName = "reviewsrv"
 [Sentry]
 DSN         = ""
 Environment = ""
+
+[GitHub]
+AppID            = 0           # numeric App ID
+PrivateKeyPath   = ""          # path to PEM (.private-key.pem)
+APIBaseURL       = "https://api.github.com"

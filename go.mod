@@ -9,6 +9,7 @@ require (
 	github.com/go-pg/pg/v10 v10.15.0
 	github.com/go-pg/urlstruct v1.0.1
 	github.com/go-playground/validator/v10 v10.30.1
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/hypnoglow/go-pg-monitor v1.2.0
 	github.com/hypnoglow/go-pg-monitor/gopgv10 v1.2.0

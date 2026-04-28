@@ -31,6 +31,11 @@ type Config struct {
 		Environment string
 		DSN         string
 	}
+	GitHub struct {
+		AppID          int64
+		PrivateKeyPath string
+		APIBaseURL     string
+	}
 }
 
 type App struct {
