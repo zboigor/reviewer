@@ -39,6 +39,9 @@ type Config struct {
 	Repos struct {
 		BaseDir string
 	}
+	Worker struct {
+		DefaultModel string // Claude model name; falls back to "opus" when empty
+	}
 }
 
 type App struct {

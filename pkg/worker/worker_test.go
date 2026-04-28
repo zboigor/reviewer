@@ -28,13 +28,16 @@ func (f *fakeDB) ReviewByID(_ context.Context, _ int) (*db.Review, *db.Project, 
 func ptr[T any](v T) *T { return &v }
 
 // newTestWorker builds a Worker wired to the given fakeDB with no Queue, App, or Cache.
+// PromptBuilder defaults to a no-op fake so callers don't have to wire it manually
+// when their test exits before the Prompt call.
 func newTestWorker(fdb *fakeDB) *Worker {
 	return &Worker{
-		ID:           "test-worker",
-		DB:           fdb,
-		Log:          slog.Default(),
-		GitHubAPI:    "https://api.github.com",
-		PollInterval: 50 * time.Millisecond,
+		ID:            "test-worker",
+		DB:            fdb,
+		Log:           slog.Default(),
+		PromptBuilder: &fakePromptBuilder{},
+		GitHubAPI:     "https://api.github.com",
+		PollInterval:  50 * time.Millisecond,
 	}
 }
 
@@ -84,31 +87,72 @@ func TestWorkerProcessRequiresGitHubCoordinates(t *testing.T) {
 // PRNumber guard is deferred to the Task 15 integration smoke. The guard
 // itself remains in worker.go.)
 
-// runnableWorker returns a Worker with non-nil App/Cache/Q/DB/Log so the
+// fakePromptBuilder is a minimal PromptBuilder stub for worker unit tests.
+type fakePromptBuilder struct {
+	prompt      string
+	err         error
+	capturedKey string
+}
+
+func (f *fakePromptBuilder) Prompt(_ context.Context, projectKey string) (string, error) {
+	f.capturedKey = projectKey
+	return f.prompt, f.err
+}
+
+// runnableWorker returns a Worker with non-nil App/Cache/Q/DB/Log/PromptBuilder so the
 // nil-guard at the top of Run() passes. The dependencies are not actually
 // invoked when ctx is pre-cancelled, so empty zero-value pointers are fine.
 func runnableWorker(t *testing.T) *Worker {
 	t.Helper()
 	return &Worker{
-		ID:           "loop-test",
-		Q:            &Queue{},
-		DB:           &fakeDB{},
-		App:          &githubapp.App{},
-		Cache:        &repos.Cache{},
-		Log:          slog.Default(),
-		PollInterval: 50 * time.Millisecond,
+		ID:            "loop-test",
+		Q:             &Queue{},
+		DB:            &fakeDB{},
+		App:           &githubapp.App{},
+		Cache:         &repos.Cache{},
+		Log:           slog.Default(),
+		PromptBuilder: &fakePromptBuilder{prompt: "test prompt"},
+		PollInterval:  50 * time.Millisecond,
 	}
 }
 
 // TestWorkerRunRequiresDependencies verifies the nil-guard at the top of Run.
 func TestWorkerRunRequiresDependencies(t *testing.T) {
-	w := &Worker{Log: slog.Default()}
-	err := w.Run(context.Background())
-	if err == nil {
-		t.Fatal("expected error from Run with nil deps, got nil")
+	cases := []struct {
+		name    string
+		worker  *Worker
+		wantMsg string
+	}{
+		{
+			name:    "missing all deps",
+			worker:  &Worker{Log: slog.Default()},
+			wantMsg: "App, Cache, Q, DB, Log, PromptBuilder are required",
+		},
+		{
+			name: "missing PromptBuilder",
+			worker: &Worker{
+				ID:    "test",
+				Q:     &Queue{},
+				DB:    &fakeDB{},
+				App:   &githubapp.App{},
+				Cache: &repos.Cache{},
+				Log:   slog.Default(),
+				// PromptBuilder intentionally omitted
+			},
+			wantMsg: "App, Cache, Q, DB, Log, PromptBuilder are required",
+		},
 	}
-	if !strings.Contains(err.Error(), "App, Cache, Q, DB, Log are required") {
-		t.Errorf("error = %q, want nil-guard message", err.Error())
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.worker.Run(context.Background())
+			if err == nil {
+				t.Fatal("expected error from Run with nil deps, got nil")
+			}
+			if !strings.Contains(err.Error(), tc.wantMsg) {
+				t.Errorf("error = %q, want to contain %q", err.Error(), tc.wantMsg)
+			}
+		})
 	}
 }
 
@@ -195,15 +239,61 @@ func TestWorkerLoopRetriesOnTransientError(t *testing.T) {
 	}
 }
 
-// TestTodoRunnerReturnsInformativeError asserts that the todoRunner stub returns
-// a clear error referencing Task 9 so operators know what to do.
-func TestTodoRunnerReturnsInformativeError(t *testing.T) {
-	r := todoRunner{}
-	_, err := r.Run(context.Background(), "")
-	if err == nil {
-		t.Fatal("expected error from todoRunner, got nil")
+// TestWorkerProcessUsesPromptBuilder verifies that process() invokes
+// PromptBuilder.Prompt with the project's ProjectKey, and that an error from
+// the builder is propagated (wrapped) to the caller.
+//
+// process() is reordered so the prompt is built before any Cache/worktree
+// work — this test relies on that ordering: a Worker with Cache=nil reaches
+// the Prompt call (which short-circuits with the sentinel error) without ever
+// dereferencing Cache. Deeper integration of Prompt → Runner → flow.Run is
+// covered by the Task 15 E2E smoke test.
+func TestWorkerProcessUsesPromptBuilder(t *testing.T) {
+	prNum := 42
+	projectKey := "test-project-key"
+	sentinel := errors.New("prompt build failed (sentinel)")
+
+	fpb := &fakePromptBuilder{err: sentinel}
+	fdb := &fakeDB{
+		review:  &db.Review{ID: 10, PRNumber: &prNum},
+		project: &db.Project{GithubOwner: ptr("owner"), GithubRepo: ptr("repo"), InstallationID: ptr(int64(99)), ProjectKey: projectKey},
 	}
-	if !strings.Contains(err.Error(), "Task 9") {
-		t.Errorf("todoRunner error = %q, want to contain %q", err.Error(), "Task 9")
+
+	w := &Worker{
+		ID:            "test-worker",
+		DB:            fdb,
+		Log:           slog.Default(),
+		PromptBuilder: fpb,
+		DefaultModel:  "opus",
+		GitHubAPI:     "https://api.github.com",
+		// Cache, App, Q intentionally nil — process() must not reach them.
+	}
+
+	job := &db.ReviewJob{ID: 1, ReviewID: 10, Attempts: 1}
+	err := w.process(context.Background(), job)
+
+	if err == nil {
+		t.Fatal("expected error from process, got nil")
+	}
+	if !errors.Is(err, sentinel) {
+		t.Errorf("err = %v, want wrapping sentinel %v", err, sentinel)
+	}
+	if fpb.capturedKey != projectKey {
+		t.Errorf("PromptBuilder.Prompt called with %q, want %q", fpb.capturedKey, projectKey)
+	}
+}
+
+// TestWorkerRunDefaultModelFallback verifies that Run() sets DefaultModel to
+// "opus" when it is left empty, before entering the polling loop.
+func TestWorkerRunDefaultModelFallback(t *testing.T) {
+	w := runnableWorker(t)
+	w.DefaultModel = ""
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_ = w.Run(ctx) // returns context.Canceled; we only care about the side effect
+
+	if w.DefaultModel != "opus" {
+		t.Errorf("DefaultModel = %q, want %q", w.DefaultModel, "opus")
 	}
 }

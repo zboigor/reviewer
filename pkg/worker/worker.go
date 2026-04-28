@@ -24,23 +24,34 @@ type DB interface {
 	ReviewByID(ctx context.Context, id int) (*db.Review, *db.Project, error)
 }
 
+// PromptBuilder builds the assembled review prompt for a project.
+// Production wiring: (*reviewer.ProjectManager).Prompt.
+type PromptBuilder interface {
+	Prompt(ctx context.Context, projectKey string) (string, error)
+}
+
 // Worker polls the queue, processes jobs, and posts review comments via GitHub.
 type Worker struct {
-	ID           string
-	Q            *Queue
-	DB           DB
-	App          *githubapp.App
-	Cache        *repos.Cache
-	Log          *slog.Logger
-	GitHubAPI    string        // default: https://api.github.com
-	PollInterval time.Duration // default: 5s
+	ID            string
+	Q             *Queue
+	DB            DB
+	App           *githubapp.App
+	Cache         *repos.Cache
+	Log           *slog.Logger
+	PromptBuilder PromptBuilder
+	DefaultModel  string        // Claude model name; falls back to "opus"
+	GitHubAPI     string        // default: https://api.github.com
+	PollInterval  time.Duration // default: 5s
 }
 
 // Run polls the queue in a loop until ctx is cancelled.
 // It uses a select-based sleep so context cancellation is responded to promptly.
 func (w *Worker) Run(ctx context.Context) error {
-	if w.App == nil || w.Cache == nil || w.Q == nil || w.DB == nil || w.Log == nil {
-		return errors.New("worker.Run: App, Cache, Q, DB, Log are required")
+	if w.App == nil || w.Cache == nil || w.Q == nil || w.DB == nil || w.Log == nil || w.PromptBuilder == nil {
+		return errors.New("worker.Run: App, Cache, Q, DB, Log, PromptBuilder are required")
+	}
+	if w.DefaultModel == "" {
+		w.DefaultModel = "opus"
 	}
 	if w.PollInterval == 0 {
 		w.PollInterval = 5 * time.Second
@@ -95,8 +106,19 @@ func (w *Worker) process(ctx context.Context, job *db.ReviewJob) error {
 		return fmt.Errorf("worker.process: fetch review: %w", err)
 	}
 
+	// Cheap validation first — fail fast before any expensive git/HTTP work.
 	if project.GithubOwner == nil || project.GithubRepo == nil || project.InstallationID == nil {
 		return errors.New("project missing GitHub coordinates")
+	}
+	if review.PRNumber == nil {
+		return errors.New("review missing PR number")
+	}
+
+	// Build the prompt before touching the repo cache: a misconfigured project
+	// or template should fail fast, before we spend time cloning/fetching.
+	prompt, err := w.PromptBuilder.Prompt(ctx, project.ProjectKey)
+	if err != nil {
+		return fmt.Errorf("worker.process: build prompt: %w", err)
 	}
 
 	// upstream is GitHub.com only. GitHub Enterprise deployments would need to
@@ -106,11 +128,6 @@ func (w *Worker) process(ctx context.Context, job *db.ReviewJob) error {
 	repoPath, err := w.Cache.Ensure(ctx, *project.InstallationID, *project.GithubOwner, *project.GithubRepo, upstream)
 	if err != nil {
 		return fmt.Errorf("worker.process: ensure repo: %w", err)
-	}
-
-	// Runtime coverage of this guard is deferred to the Task 15 integration smoke.
-	if review.PRNumber == nil {
-		return errors.New("review missing PR number")
 	}
 
 	headSHA, err := w.Cache.FetchPR(ctx, repoPath, *project.InstallationID, upstream, *review.PRNumber)
@@ -136,20 +153,18 @@ func (w *Worker) process(ctx context.Context, job *db.ReviewJob) error {
 		HeadSHA:  headSHA,
 	}
 
+	runner := &ctl.ExecClaudeRunner{
+		Model: w.DefaultModel,
+		Dir:   wt,
+		Log:   w.Log,
+	}
+
 	_, err = flow.Run(ctx, flow.Input{
-		Prompt:    "",
-		Runner:    todoRunner{},
+		Prompt:    prompt,
+		Runner:    runner,
 		Commenter: commenter,
 		Dir:       wt,
 		Log:       w.Log,
 	})
 	return err
-}
-
-// todoRunner is a placeholder Runner that returns a clear error.
-// Task 9 replaces this stub with the real Prompt+Runner wiring.
-type todoRunner struct{}
-
-func (todoRunner) Run(_ context.Context, _ string) (*ctl.ClaudeResult, error) {
-	return nil, errors.New("worker.process: prompt+runner not yet wired (Task 9)")
 }
