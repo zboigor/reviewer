@@ -287,6 +287,10 @@ export interface ITasktrackerValidateParams {
   taskTracker: ITaskTracker
 }
 
+export interface IReviewTriggerParams {
+  prUrl: string
+}
+
 export interface IUser {
   id: number,
   createdAt: string,
@@ -749,6 +753,12 @@ export class User implements IUser {
   status?: IStatus = null;
 }
 
+export class ReviewTriggerParams implements IReviewTriggerParams {
+  static entityName = "reviewtriggerparams";
+
+  prUrl: string = null;
+}
+
 export class UserAddParams implements IUserAddParams {
   static entityName = "useraddparams";
 
@@ -958,6 +968,14 @@ export const factory = (send: any) => ({
      */
     validate(params: IPromptValidateParams): Promise<Array<IFieldError>> {
       return send('prompt.Validate', params)
+    }
+  },
+  review: {
+    /**
+     * Trigger creates a review for the given GitHub PR URL and enqueues a worker job.
+     */
+    trigger(params: IReviewTriggerParams): Promise<number> {
+      return send('review.Trigger', params)
     }
   },
   slackchannel: {

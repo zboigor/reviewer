@@ -20,6 +20,7 @@
             <router-link to="/task-trackers" class="hover:text-fg transition-colors" active-class="!text-accent" :class="$route.path.startsWith('/task-trackers') ? 'text-accent' : 'text-fg-secondary'">Trackers</router-link>
             <router-link to="/slack-channels" class="hover:text-fg transition-colors" active-class="!text-accent" :class="$route.path.startsWith('/slack-channels') ? 'text-accent' : 'text-fg-secondary'">Slack</router-link>
             <router-link to="/users" class="hover:text-fg transition-colors" active-class="!text-accent" :class="$route.path.startsWith('/users') ? 'text-accent' : 'text-fg-secondary'">Users</router-link>
+            <router-link to="/reviews/new" class="hover:text-fg transition-colors" active-class="!text-accent" :class="$route.path.startsWith('/reviews') ? 'text-accent' : 'text-fg-secondary'">New review</router-link>
           </nav>
         </div>
 
@@ -85,6 +86,7 @@ const navLinks = [
   { to: '/task-trackers', label: 'Task Trackers' },
   { to: '/slack-channels', label: 'Slack Channels' },
   { to: '/users', label: 'Users' },
+  { to: '/reviews/new', label: 'New review' },
 ]
 
 watch(() => route.path, () => { mobileOpen.value = false })
