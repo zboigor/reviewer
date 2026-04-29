@@ -160,11 +160,12 @@ func TestRunInvokesRunnerAndCommenter(t *testing.T) {
 	if commenter.inlines != 2 {
 		t.Errorf("PostInline called %d times, want 2", commenter.inlines)
 	}
-	if result == nil || result.Draft == nil {
-		t.Fatal("result.Draft is nil")
+	if result == nil {
+		t.Fatal("result (ClaudeResult) is nil")
 	}
-	if result.Draft.Review.Title != "Test PR" {
-		t.Errorf("draft title = %q, want %q", result.Draft.Review.Title, "Test PR")
+	// The fakeRunner returns a ClaudeResult with DurationMs=1000.
+	if result.DurationMs != 1000 {
+		t.Errorf("result.DurationMs = %d, want 1000", result.DurationMs)
 	}
 }
 

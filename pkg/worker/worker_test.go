@@ -18,10 +18,25 @@ type fakeDB struct {
 	review  *db.Review
 	project *db.Project
 	err     error
+
+	// session cache stubs
+	sessionGetResult *db.PRSession
+	sessionGetErr    error
+	sessionUpsertErr error
+	upsertCalls      int
 }
 
 func (f *fakeDB) ReviewByID(_ context.Context, _ int) (*db.Review, *db.Project, error) {
 	return f.review, f.project, f.err
+}
+
+func (f *fakeDB) GetPRSession(_ context.Context, _, _ int) (*db.PRSession, error) {
+	return f.sessionGetResult, f.sessionGetErr
+}
+
+func (f *fakeDB) UpsertPRSession(_ context.Context, _, _ int, _ string) error {
+	f.upsertCalls++
+	return f.sessionUpsertErr
 }
 
 // ptr is a convenience helper for creating a pointer to a value.
@@ -295,5 +310,31 @@ func TestWorkerRunDefaultModelFallback(t *testing.T) {
 
 	if w.DefaultModel != "opus" {
 		t.Errorf("DefaultModel = %q, want %q", w.DefaultModel, "opus")
+	}
+}
+
+// TestFakeDBSessionMethodsCompile verifies that fakeDB correctly implements the
+// new session-cache methods of worker.DB, preventing the test harness from rotting.
+func TestFakeDBSessionMethodsCompile(t *testing.T) {
+	sentinel := &db.PRSession{ID: 1, ClaudeSessionID: "sess-abc"}
+	fdb := &fakeDB{
+		sessionGetResult: sentinel,
+		sessionGetErr:    nil,
+		sessionUpsertErr: nil,
+	}
+
+	got, err := fdb.GetPRSession(context.Background(), 1, 42)
+	if err != nil {
+		t.Fatalf("GetPRSession: %v", err)
+	}
+	if got != sentinel {
+		t.Errorf("GetPRSession = %v, want %v", got, sentinel)
+	}
+
+	if err := fdb.UpsertPRSession(context.Background(), 1, 42, "sess-abc"); err != nil {
+		t.Fatalf("UpsertPRSession: %v", err)
+	}
+	if fdb.upsertCalls != 1 {
+		t.Errorf("upsertCalls = %d, want 1", fdb.upsertCalls)
 	}
 }

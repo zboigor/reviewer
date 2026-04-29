@@ -22,6 +22,10 @@ import (
 // worker can be unit-tested without standing up a full repo.
 type DB interface {
 	ReviewByID(ctx context.Context, id int) (*db.Review, *db.Project, error)
+	// GetPRSession returns the cached Claude session for a PR, or (nil, nil) if absent.
+	GetPRSession(ctx context.Context, projectID, prNumber int) (*db.PRSession, error)
+	// UpsertPRSession sets the cached session for a PR.
+	UpsertPRSession(ctx context.Context, projectID, prNumber int, sessionID string) error
 }
 
 // PromptBuilder builds the assembled review prompt for a project.
@@ -153,18 +157,36 @@ func (w *Worker) process(ctx context.Context, job *db.ReviewJob) error {
 		HeadSHA:  headSHA,
 	}
 
-	runner := &ctl.ExecClaudeRunner{
-		Model: w.DefaultModel,
-		Dir:   wt,
-		Log:   w.Log,
+	var sessionID string
+	if existing, err := w.DB.GetPRSession(ctx, project.ID, *review.PRNumber); err != nil {
+		w.Log.WarnContext(ctx, "look up pr session", "err", err)
+	} else if existing != nil {
+		sessionID = existing.ClaudeSessionID
+		w.Log.InfoContext(ctx, "resuming claude session", "sessionId", sessionID, "since", existing.CreatedAt)
 	}
 
-	_, err = flow.Run(ctx, flow.Input{
+	runner := &ctl.ExecClaudeRunner{
+		Model:     w.DefaultModel,
+		Dir:       wt,
+		Log:       w.Log,
+		SessionID: sessionID,
+	}
+
+	result, err := flow.Run(ctx, flow.Input{
 		Prompt:    prompt,
 		Runner:    runner,
 		Commenter: commenter,
 		Dir:       wt,
 		Log:       w.Log,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+
+	if result != nil && result.SessionID != "" {
+		if err := w.DB.UpsertPRSession(ctx, project.ID, *review.PRNumber, result.SessionID); err != nil {
+			w.Log.WarnContext(ctx, "upsert pr session", "err", err)
+		}
+	}
+	return nil
 }

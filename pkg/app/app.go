@@ -130,7 +130,10 @@ func (a *App) startWorkers(ctx context.Context) error {
 	}
 
 	pm := reviewer.NewProjectManager(a.db)
-	workerDB := workerDBAdapter{repo: db.NewReviewRepo(a.db).WithEnabledAndIssueFilters()}
+	workerDB := workerDBAdapter{
+		repo:        db.NewReviewRepo(a.db).WithEnabledAndIssueFilters(),
+		sessionRepo: db.NewPRSessionRepo(a.db),
+	}
 
 	concurrency := a.cfg.Worker.Concurrency
 	if concurrency <= 0 {
@@ -173,7 +176,10 @@ func (a *App) startWorkers(ctx context.Context) error {
 // workerDBAdapter satisfies worker.DB by joining the review with its project.
 // ReviewRepo.ReviewByID returns (*db.Review, error); we need (*db.Review, *db.Project, error).
 // Passing FullReview() as an op causes go-pg to populate review.Project via a JOIN.
-type workerDBAdapter struct{ repo db.ReviewRepo }
+type workerDBAdapter struct {
+	repo        db.ReviewRepo
+	sessionRepo *db.PRSessionRepo
+}
 
 func (a workerDBAdapter) ReviewByID(ctx context.Context, id int) (*db.Review, *db.Project, error) {
 	review, err := a.repo.ReviewByID(ctx, id, a.repo.FullReview())
@@ -187,6 +193,14 @@ func (a workerDBAdapter) ReviewByID(ctx context.Context, id int) (*db.Review, *d
 		return nil, nil, fmt.Errorf("review %d has no project", id)
 	}
 	return review, review.Project, nil
+}
+
+func (a workerDBAdapter) GetPRSession(ctx context.Context, projectID, prNumber int) (*db.PRSession, error) {
+	return a.sessionRepo.Get(ctx, projectID, prNumber)
+}
+
+func (a workerDBAdapter) UpsertPRSession(ctx context.Context, projectID, prNumber int, sessionID string) error {
+	return a.sessionRepo.Upsert(ctx, projectID, prNumber, sessionID)
 }
 
 // TypeScriptClient returns TypeScript client for VT or RPC.

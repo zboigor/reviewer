@@ -68,15 +68,11 @@ type Input struct {
 	Log *slog.Logger
 }
 
-// Result holds the outputs of a successful Run.
-type Result struct {
-	Draft *rest.ReviewDraft
-}
-
 // Run orchestrates a single review: run Claude → read review.json → comment → HTML.
 // It does NOT upload to the server; the caller is responsible for uploading
 // (separating IO concerns makes the worker easier to test).
-func Run(ctx context.Context, in Input) (*Result, error) {
+// The returned *ctl.ClaudeResult carries SessionID and cost metrics from the run.
+func Run(ctx context.Context, in Input) (*ctl.ClaudeResult, error) {
 	// 1. Run Claude.
 	claudeResult, err := in.Runner.Run(ctx, in.Prompt)
 	if err != nil {
@@ -139,7 +135,7 @@ func Run(ctx context.Context, in Input) (*Result, error) {
 		}
 	}
 
-	return &Result{Draft: draft}, nil
+	return claudeResult, nil
 }
 
 func isInlineSeverity(severity string) bool {

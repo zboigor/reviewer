@@ -46,6 +46,11 @@ var Columns = struct {
 
 		Review string
 	}
+	PRSession struct {
+		ID, ProjectID, PRNumber, ClaudeSessionID, CreatedAt, UpdatedAt string
+
+		Project string
+	}
 }{
 	User: struct {
 		ID, CreatedAt, Login, Password, AuthKey, LastActivityAt, StatusID string
@@ -207,6 +212,20 @@ var Columns = struct {
 
 		Review: "Review",
 	},
+	PRSession: struct {
+		ID, ProjectID, PRNumber, ClaudeSessionID, CreatedAt, UpdatedAt string
+
+		Project string
+	}{
+		ID:              "prSessionId",
+		ProjectID:       "projectId",
+		PRNumber:        "prNumber",
+		ClaudeSessionID: "claudeSessionId",
+		CreatedAt:       "createdAt",
+		UpdatedAt:       "updatedAt",
+
+		Project: "Project",
+	},
 }
 
 var Tables = struct {
@@ -235,6 +254,9 @@ var Tables = struct {
 		Name, Alias string
 	}
 	ReviewJob struct {
+		Name, Alias string
+	}
+	PRSession struct {
 		Name, Alias string
 	}
 }{
@@ -290,6 +312,12 @@ var Tables = struct {
 		Name, Alias string
 	}{
 		Name:  "reviewJobs",
+		Alias: "t",
+	},
+	PRSession: struct {
+		Name, Alias string
+	}{
+		Name:  "prSessions",
 		Alias: "t",
 	},
 }
@@ -451,4 +479,17 @@ type ReviewJob struct {
 	UpdatedAt time.Time  `pg:"updatedAt,use_zero"`
 
 	Review *Review `pg:"fk:reviewId,rel:has-one"`
+}
+
+type PRSession struct {
+	tableName struct{} `pg:"prSessions,alias:t,discard_unknown_columns"`
+
+	ID              int       `pg:"prSessionId,pk"`
+	ProjectID       int       `pg:"projectId,use_zero"`
+	PRNumber        int       `pg:"prNumber,use_zero"`
+	ClaudeSessionID string    `pg:"claudeSessionId,use_zero"`
+	CreatedAt       time.Time `pg:"createdAt,use_zero"`
+	UpdatedAt       time.Time `pg:"updatedAt,use_zero"`
+
+	Project *Project `pg:"fk:projectId,rel:has-one"`
 }
