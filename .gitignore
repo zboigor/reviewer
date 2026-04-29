@@ -1,5 +1,7 @@
 .idea
 .vscode
+.worktrees/
+docs/superpowers/
 cfg/local.toml
 coverage.txt
 coverage.xml
