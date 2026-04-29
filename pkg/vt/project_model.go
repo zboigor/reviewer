@@ -16,6 +16,9 @@ type Project struct {
 	SlackChannelID *int    `json:"slackChannelId"`
 	StatusID       int     `json:"statusId" validate:"required,status"`
 	Instructions   *string `json:"instructions"`
+	GithubOwner    *string `json:"githubOwner"`
+	GithubRepo     *string `json:"githubRepo"`
+	InstallationID *int64  `json:"installationId"`
 
 	Prompt       *PromptSummary       `json:"prompt"`
 	TaskTracker  *TaskTrackerSummary  `json:"taskTracker"`
@@ -39,6 +42,9 @@ func (p *Project) ToDB() *db.Project {
 		SlackChannelID: p.SlackChannelID,
 		StatusID:       p.StatusID,
 		Instructions:   p.Instructions,
+		GithubOwner:    p.GithubOwner,
+		GithubRepo:     p.GithubRepo,
+		InstallationID: p.InstallationID,
 	}
 
 	return project

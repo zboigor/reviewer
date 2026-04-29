@@ -20,6 +20,9 @@ func NewProject(in *db.Project) *Project {
 		SlackChannelID: in.SlackChannelID,
 		StatusID:       in.StatusID,
 		Instructions:   in.Instructions,
+		GithubOwner:    in.GithubOwner,
+		GithubRepo:     in.GithubRepo,
+		InstallationID: in.InstallationID,
 
 		Prompt:       NewPromptSummary(in.Prompt),
 		TaskTracker:  NewTaskTrackerSummary(in.TaskTracker),

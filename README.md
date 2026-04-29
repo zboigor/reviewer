@@ -1,34 +1,41 @@
 # reviewer
 
-AI-powered code review platform using Claude. Collects, stores and displays code review results from CI pipelines.
+AI-powered code review platform using Claude. Triggers reviews from the admin panel, posts inline GitHub PR comments, and stores results in PostgreSQL.
 
 ## Features
 
 - **Multi-project support** with configurable prompts per project
 - **5 review types**: architecture, code, security, tests, operability
 - **Severity levels**: critical, high, medium, low with traffic light system (red/yellow/green)
-- **reviewctl CLI** — single binary for the full review cycle: prompt fetch, Claude Code, upload, GitLab MR comments, HTML report
-- **GitLab MR inline comments** — critical and high issues posted directly in the diff with cleanup on re-runs
-- **Session caching** — `--session`/`--continue` flags to reuse Claude prompt cache (~90% token savings)
+- **Manual triggering** — paste a GitHub PR URL in the admin panel; worker pool picks it up
+- **GitHub App integration** — installation tokens are minted server-side, comments are posted as the App identity
+- **GitHub PR inline comments** — critical and high issues posted directly in the diff with cleanup on re-runs
+- **Worker pool** — Postgres-backed job queue with `FOR UPDATE SKIP LOCKED`; concurrency configurable
+- **Repo cache** — bare clones reused across reviews; per-PR worktrees
+- **Session caching for reviewctl** — Claude prompt cache reused across local re-runs (~90% token savings)
 - **Auto-migrations** — pgmigrator integrated as Go library, runs SQL patches on server startup
-- **GitLab CI integration** via generated CI component and Docker image
 - **Slack notifications** for completed reviews
-- **VT admin panel** for managing projects, prompts, users, and Slack channels
+- **VT admin panel** for managing projects, prompts, users, Slack channels, and triggering reviews
 - **REST + JSON-RPC API** with auto-generated TypeScript clients and OpenRPC schema
 
 ## Architecture
 
 ```
-GitLab CI (merge request)
-  -> reviewctl review
-       -> fetch prompt from reviewer (/v1/prompt/$PROJECT_KEY/)
-       -> claude --print --output-format json -p "$PROMPT"
+Admin user (browser, /vt/)
+  -> POST /v1/vt/ rpc Review.Trigger { prUrl }
+       -> validate user session
+       -> parse PR URL, look up project by GitHub repo
+       -> insert review row + reviewJobs row (status=pending)
+  -> Worker pool claims pending jobs (FOR UPDATE SKIP LOCKED)
+       -> mint GitHub App installation token
+       -> ensure bare clone of repo on disk
+       -> fetch refs/pull/<n>/head, create per-PR worktree
+       -> build prompt from project config
+       -> claude --print --output-format json
        -> parse review.json + R*.md files
-       -> upload to reviewer (/v1/upload/$PROJECT_KEY/)
-       -> post GitLab MR comments (summary + inline issues)
+       -> post GitHub PR summary comment + inline comments for critical/high issues
        -> generate HTML report
-  -> reviewer server stores results in PostgreSQL
-  -> frontend displays reviews / Slack notification sent
+       -> Slack notification for completed review
 ```
 
 ## Prerequisites
@@ -140,16 +147,20 @@ TypeScript clients are auto-generated at `/v1/rpc/api.ts` and `/v1/vt/api.ts`.
 
 ## reviewctl
 
-`reviewctl` is a Go CLI that replaces the old bash + Node.js CI scripts with a single binary.
+`reviewctl` is a Go CLI for **local prompt iteration** — it runs Claude against
+the current working directory and writes review.json + R*.md files plus an HTML
+report. The production review path is via the admin panel; reviewctl is for
+authoring/debugging prompts on your laptop.
 
 ```bash
-reviewctl review    # Full cycle: prompt -> Claude -> upload -> GitLab comments -> HTML
+reviewctl review    # Fetch prompt -> Claude -> upload to reviewsrv
 reviewctl upload    # Upload local review.json + R*.md to server
-reviewctl comment   # Post MR comments for an existing review
 reviewctl version   # Print version
 ```
 
-Key flags: `--key`, `--url`, `--model`, `--session` (prompt cache reuse), `--continue` (resume last session). All flags have env variable equivalents for CI. See `reviewctl --help` for details.
+Key flags: `--key`, `--url`, `--public-url`, `--model`, `--dir`, `--verbose`,
+`--session` (Claude session reuse), `--continue`. All flags have env variable
+equivalents. See `reviewctl --help` for details.
 
 ```bash
 make build-reviewctl   # Build reviewctl binary
@@ -165,21 +176,31 @@ reviewsrv -config config.toml -patches /patches
 
 Patches are stored in `docs/patches/*.sql` with `YYYY-MM-DD-description.sql` naming. The Docker image includes patches at `/patches/`. Docker Compose runs with `--patches` by default.
 
-## CI Integration
+## Set up a project
 
-The admin panel (`/vt/`) provides ready-to-use CI configuration:
+1. **Install the Reviewer GitHub App** on the GitHub org that owns your target repos. The App needs:
+   - Pull requests: read & write
+   - Contents: read
+2. **Configure the server** with the App's credentials in `cfg/local.toml`:
+   ```toml
+   [GitHub]
+   AppID          = 123456                                 # numeric App ID
+   PrivateKeyPath = "/etc/reviewer/app.private-key.pem"    # path to PEM file
+   APIBaseURL     = "https://api.github.com"
 
-1. Open **Projects** and click the **CI** button in the page header — it shows the Dockerfile and GitLab CI YAML.
-2. Build the Docker image from the provided Dockerfile.
-3. Add CI/CD variables to your GitLab project:
-   - `PROJECT_KEY` — project key from reviewer
-   - `ANTHROPIC_API_KEY` — Claude API key
-   - `REVIEWER_GITLAB_TOKEN` — GitLab token for MR comments (optional)
-4. Paste the generated YAML into your repository's `.gitlab-ci.yml`.
+   [Repos]
+   BaseDir = "/var/lib/reviewer/repos"                     # bare-clone storage
 
-The CI job runs `reviewctl review` on merge requests. It fetches the prompt, runs Claude Code review, uploads results, and posts inline comments to the MR.
-
-For local runs, click the **Run** button on a specific project row to get a ready-to-use bash script.
+   [Worker]
+   Enabled        = true
+   Concurrency    = 1
+   PollIntervalMs = 5000
+   DefaultModel   = "opus"
+   ```
+3. **Create a project in the admin panel** (`/vt/projects/new`) and set:
+   - **GitHub owner / repo** (e.g. `synthesized-io / tdk`)
+   - **Installation ID** — visible in the App's "Configure" page on GitHub after install
+4. **Trigger reviews** from `/vt/reviews/new` by pasting a PR URL. The worker pool picks the job up within `PollIntervalMs` and posts results to the PR.
 
 ## Administration
 
@@ -196,12 +217,12 @@ When deploying behind a reverse proxy, URLs should be split by access level:
 | `/v1/rpc/` | Review JSON-RPC API |
 | `/v1/vt/` | Admin JSON-RPC API |
 
-**Internal (CI only, must not be exposed externally):**
+**Internal (reviewctl only, must not be exposed externally):**
 
 | Path | Description |
 |------|-------------|
-| `/v1/upload/` | Review upload endpoint |
-| `/v1/prompt/` | Prompt fetch endpoint |
+| `/v1/upload/` | Review upload endpoint (reviewctl) |
+| `/v1/prompt/` | Prompt fetch endpoint (reviewctl) |
 
 Example nginx configuration:
 
@@ -212,7 +233,7 @@ location /vt/       { proxy_pass http://reviewer:8075; }
 location /v1/rpc/   { proxy_pass http://reviewer:8075; }
 location /v1/vt/    { proxy_pass http://reviewer:8075; }
 
-# Internal URLs — accessible only from CI runners
+# Internal URLs — accessible only from reviewctl (local runs)
 location /v1/upload/ { deny all; }
 location /v1/prompt/ { deny all; }
 ```

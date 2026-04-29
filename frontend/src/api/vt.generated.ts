@@ -33,6 +33,9 @@ export interface IProject {
   slackChannelId?: number,
   statusId: number,
   instructions?: string,
+  githubOwner?: string,
+  githubRepo?: string,
+  installationId?: number,
   prompt?: IPromptSummary,
   taskTracker?: ITaskTrackerSummary,
   slackChannel?: ISlackChannelSummary,
@@ -400,6 +403,9 @@ export class Project implements IProject {
   slackChannelId?: number = 0;
   statusId: number = 0;
   instructions?: string = null;
+  githubOwner?: string = null;
+  githubRepo?: string = null;
+  installationId?: number = null;
   prompt?: IPromptSummary = null;
   taskTracker?: ITaskTrackerSummary = null;
   slackChannel?: ISlackChannelSummary = null;
