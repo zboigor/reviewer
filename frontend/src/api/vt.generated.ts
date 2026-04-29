@@ -11,11 +11,6 @@ export interface IAuthLoginParams {
   remember: boolean
 }
 
-export interface ICIFile {
-  name: string,
-  content: string
-}
-
 export interface IFieldError {
   field: string,
   error: string,
@@ -38,6 +33,9 @@ export interface IProject {
   slackChannelId?: number,
   statusId: number,
   instructions?: string,
+  githubOwner?: string,
+  githubRepo?: string,
+  installationId?: number,
   prompt?: IPromptSummary,
   taskTracker?: ITaskTrackerSummary,
   slackChannel?: ISlackChannelSummary,
@@ -287,6 +285,10 @@ export interface ITasktrackerValidateParams {
   taskTracker: ITaskTracker
 }
 
+export interface IReviewTriggerParams {
+  prUrl: string
+}
+
 export interface IUser {
   id: number,
   createdAt: string,
@@ -373,13 +375,6 @@ export class AuthLoginParams implements IAuthLoginParams {
   remember: boolean = false;
 }
 
-export class CIFile implements ICIFile {
-  static entityName = "cifile";
-
-  name: string = null;
-  content: string = null;
-}
-
 export class FieldError implements IFieldError {
   static entityName = "fielderror";
 
@@ -408,6 +403,9 @@ export class Project implements IProject {
   slackChannelId?: number = 0;
   statusId: number = 0;
   instructions?: string = null;
+  githubOwner?: string = null;
+  githubRepo?: string = null;
+  installationId?: number = null;
   prompt?: IPromptSummary = null;
   taskTracker?: ITaskTrackerSummary = null;
   slackChannel?: ISlackChannelSummary = null;
@@ -749,6 +747,12 @@ export class User implements IUser {
   status?: IStatus = null;
 }
 
+export class ReviewTriggerParams implements IReviewTriggerParams {
+  static entityName = "reviewtriggerparams";
+
+  prUrl: string = null;
+}
+
 export class UserAddParams implements IUserAddParams {
   static entityName = "useraddparams";
 
@@ -898,12 +902,6 @@ export const factory = (send: any) => ({
       return send('project.GetByID', params)
     },
     /**
-     * GitlabCI returns CI configuration files for GitLab CI integration.
-     */
-    gitlabCI(): Promise<Array<ICIFile>> {
-      return send('project.GitlabCI')
-    },
-    /**
      * Update updates the Project data identified by id from the query.
      */
     update(params: IProjectUpdateParams): Promise<boolean> {
@@ -958,6 +956,14 @@ export const factory = (send: any) => ({
      */
     validate(params: IPromptValidateParams): Promise<Array<IFieldError>> {
       return send('prompt.Validate', params)
+    }
+  },
+  review: {
+    /**
+     * Trigger creates a review for the given GitHub PR URL and enqueues a worker job.
+     */
+    trigger(params: IReviewTriggerParams): Promise<number> {
+      return send('review.Trigger', params)
     }
   },
   slackchannel: {

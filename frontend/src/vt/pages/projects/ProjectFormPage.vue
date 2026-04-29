@@ -27,6 +27,23 @@
           <VInput v-model="entity.vcsURL" @change="onVcsURLChange" type="text" placeholder="https://github.com/..." />
         </FormField>
 
+        <FormField label="GitHub Owner" :error="fieldError('githubOwner')">
+          <VInput v-model="entity.githubOwner" type="text" placeholder="org or username" />
+        </FormField>
+
+        <FormField label="GitHub Repo" :error="fieldError('githubRepo')">
+          <VInput v-model="entity.githubRepo" type="text" placeholder="repository name" />
+        </FormField>
+
+        <FormField label="GitHub Installation ID" :error="fieldError('installationId')">
+          <VInput
+            :model-value="entity.installationId ?? ''"
+            @update:model-value="v => entity.installationId = v === '' || v == null ? undefined : Number(v)"
+            type="number"
+            placeholder="numeric ID, e.g. 12345678"
+          />
+        </FormField>
+
         <FormField label="Language" :error="fieldError('language')">
           <VInput v-model="entity.language" type="text" placeholder="Go, TypeScript, etc." />
         </FormField>
@@ -94,7 +111,7 @@ const showConfirm = ref(false)
 const activeTab = ref('general')
 
 const { entity, loading, saving, error, fieldError, load, save, remove } = useForm<Project>(vtApi.project, 'project', () => ({
-  id: 0, title: '', vcsURL: '', language: '', promptId: undefined, taskTrackerId: undefined, slackChannelId: undefined, statusId: 1, instructions: '',
+  id: 0, title: '', vcsURL: '', language: '', promptId: undefined, taskTrackerId: undefined, slackChannelId: undefined, statusId: 1, instructions: '', githubOwner: '', githubRepo: '', installationId: undefined,
 }))
 
 async function loadPrompts() {

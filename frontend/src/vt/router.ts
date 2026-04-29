@@ -14,6 +14,7 @@ import ProjectFormPage from './pages/projects/ProjectFormPage.vue'
 import ProjectBulkAddPage from './pages/projects/ProjectBulkAddPage.vue'
 import UsersPage from './pages/users/UsersPage.vue'
 import UserFormPage from './pages/users/UserFormPage.vue'
+import ReviewTriggerPage from './pages/ReviewTriggerPage.vue'
 
 const router = createRouter({
   history: createWebHistory('/vt/'),
@@ -37,6 +38,7 @@ const router = createRouter({
     { path: '/users', name: 'users', component: UsersPage },
     { path: '/users/new', name: 'user-new', component: UserFormPage },
     { path: '/users/:id', name: 'user-edit', component: UserFormPage, props: true },
+    { path: '/reviews/new', name: 'review-new', component: ReviewTriggerPage },
   ],
 })
 

@@ -11,21 +11,21 @@ import (
 )
 
 var RPC = struct {
-	ProjectService      struct{ Count, Get, GetByID, Add, Update, Delete, GitlabCI, Validate string }
+	ProjectService      struct{ Count, Get, GetByID, Add, Update, Delete, Validate string }
 	PromptService       struct{ Count, Get, GetByID, Add, Update, Delete, Validate string }
 	SlackChannelService struct{ Count, Get, GetByID, Add, Update, Delete, Validate string }
 	TaskTrackerService  struct{ Count, Get, GetByID, Add, Update, Delete, Validate string }
+	ReviewService       struct{ Trigger string }
 	AuthService         struct{ Login, Logout, Profile, ChangePassword, VfsAuthToken string }
 	UserService         struct{ Count, Get, GetByID, Add, Update, Delete, Validate string }
 }{
-	ProjectService: struct{ Count, Get, GetByID, Add, Update, Delete, GitlabCI, Validate string }{
+	ProjectService: struct{ Count, Get, GetByID, Add, Update, Delete, Validate string }{
 		Count:    "count",
 		Get:      "get",
 		GetByID:  "getbyid",
 		Add:      "add",
 		Update:   "update",
 		Delete:   "delete",
-		GitlabCI: "gitlabci",
 		Validate: "validate",
 	},
 	PromptService: struct{ Count, Get, GetByID, Add, Update, Delete, Validate string }{
@@ -54,6 +54,9 @@ var RPC = struct {
 		Update:   "update",
 		Delete:   "delete",
 		Validate: "validate",
+	},
+	ReviewService: struct{ Trigger string }{
+		Trigger: "trigger",
 	},
 	AuthService: struct{ Login, Logout, Profile, ChangePassword, VfsAuthToken string }{
 		Login:          "login",
@@ -1279,36 +1282,6 @@ func (ProjectService) SMD() smd.ServiceInfo {
 					404: "Not Found",
 				},
 			},
-			"GitlabCI": {
-				Description: `GitlabCI returns CI configuration files for GitLab CI integration.`,
-				Parameters:  []smd.JSONSchema{},
-				Returns: smd.JSONSchema{
-					Description: `[]CIFile`,
-					Type:        smd.Array,
-					TypeName:    "[]CIFile",
-					Items: map[string]string{
-						"$ref": "#/definitions/CIFile",
-					},
-					Definitions: map[string]smd.Definition{
-						"CIFile": {
-							Type: "object",
-							Properties: smd.PropertyList{
-								{
-									Name: "name",
-									Type: smd.String,
-								},
-								{
-									Name: "content",
-									Type: smd.String,
-								},
-							},
-						},
-					},
-				},
-				Errors: map[int]string{
-					500: "Internal Error",
-				},
-			},
 			"Validate": {
 				Description: `Validate verifies that Project data is valid.`,
 				Parameters: []smd.JSONSchema{
@@ -1682,9 +1655,6 @@ func (s ProjectService) Invoke(ctx context.Context, method string, params json.R
 		}
 
 		resp.Set(s.Delete(ctx, args.Id))
-
-	case RPC.ProjectService.GitlabCI:
-		resp.Set(s.GitlabCI(ctx))
 
 	case RPC.ProjectService.Validate:
 		var args = struct {
@@ -4019,6 +3989,63 @@ func (s TaskTrackerService) Invoke(ctx context.Context, method string, params js
 		}
 
 		resp.Set(s.Validate(ctx, args.TaskTracker))
+
+	default:
+		resp = zenrpc.NewResponseError(nil, zenrpc.MethodNotFound, "", nil)
+	}
+
+	return resp
+}
+
+func (ReviewService) SMD() smd.ServiceInfo {
+	return smd.ServiceInfo{
+		Methods: map[string]smd.Service{
+			"Trigger": {
+				Description: `Trigger creates a review for the given GitHub PR URL and enqueues a worker job.`,
+				Parameters: []smd.JSONSchema{
+					{
+						Name:        "prUrl",
+						Description: `GitHub PR URL like https://github.com/owner/repo/pull/123`,
+						Type:        smd.String,
+					},
+				},
+				Returns: smd.JSONSchema{
+					Description: `Created review ID`,
+					Type:        smd.Integer,
+				},
+				Errors: map[int]string{
+					400: "Invalid URL or no project for repo",
+					401: "Unauthenticated",
+				},
+			},
+		},
+	}
+}
+
+// Invoke is as generated code from zenrpc cmd
+func (s ReviewService) Invoke(ctx context.Context, method string, params json.RawMessage) zenrpc.Response {
+	resp := zenrpc.Response{}
+	var err error
+
+	switch method {
+	case RPC.ReviewService.Trigger:
+		var args = struct {
+			PrUrl string `json:"prUrl"`
+		}{}
+
+		if zenrpc.IsArray(params) {
+			if params, err = zenrpc.ConvertToObject([]string{"prUrl"}, params); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &args); err != nil {
+				return zenrpc.NewResponseError(nil, zenrpc.InvalidParams, "", err.Error())
+			}
+		}
+
+		resp.Set(s.Trigger(ctx, args.PrUrl))
 
 	default:
 		resp = zenrpc.NewResponseError(nil, zenrpc.MethodNotFound, "", nil)
